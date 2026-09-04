@@ -1,0 +1,11 @@
+{
+    "model_name": "Gradient Boosting",
+    "problem_type": "regression",
+    "target_column": "Trip_Price",
+    "metrics": {
+        "model": "Gradient Boosting",
+        "r2": 0.9725485254267465,
+        "mae": 3.0640745605380553,
+        "rmse": 5.139939675738017
+    }
+}

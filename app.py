@@ -1,74 +1,176 @@
-"""
-Auto‑ML Streamlit App
-=====================
+import json
+from pathlib import Path
 
-This lightweight app lets a user drag‑and‑drop a CSV or Excel file, automatically
-detects whether the task is a classification or regression problem, trains a simple
-baseline model (RandomForest), evaluates it, and visualises the result.
-
-The implementation follows the plan approved earlier – it is deliberately short
-and heavily commented so the logic is clear.
-"""
-import os
-import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.metrics import accuracy_score, r2_score, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
+import streamlit as st
+from model_train import train_and_save_model
 
-# ---------------------------------------------------------------------------
-# 1️⃣  Setup – ensure an uploads folder exists.
-# ---------------------------------------------------------------------------
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# 2️⃣  UI – title and file uploader.
-# ---------------------------------------------------------------------------
-st.title("📊 Auto‑ML – Upload a dataset and get instant results")
-st.write(
-    "Upload a CSV or Excel file. The app will infer the problem type, "
-    "train a baseline model, and show the best‑fit metric and a plot."
+UPLOAD_DIR = Path("uploads")
+STATE_FILE = Path("selected_data.json")
+RESULTS_FILE = Path("best_model_results.json")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+st.set_page_config(
+    page_title="Model results",
+    page_icon=":material/insights:",
+    layout="centered",
 )
 
-uploaded_file = st.file_uploader(
-    "🗂️ Drag‑and‑drop your data file here",
-    type=["csv", "xlsx"],
-    help="Supported formats: CSV and Excel (.xlsx)",
+st.markdown(
+    """
+    <style>
+        .stApp {
+            background: #f5f3ef;
+            color: #1e2927;
+        }
+        .stApp p,
+        .stApp label,
+        .stApp [data-testid="stMarkdownContainer"],
+        .stApp [data-testid="stFileUploaderDropzoneInstructions"],
+        .stApp [data-testid="stFileUploaderDropzoneInstructions"] span {
+            color: #1e2927 !important;
+        }
+        .stApp [data-testid="stFileUploaderDropzone"] {
+            background: #fffdf9;
+            border: 1px dashed #c9c0b4;
+        }
+        .stApp [data-testid="stFileUploaderDropzone"] small {
+            color: #61706c !important;
+        }
+        .stApp [data-testid="stMetricLabel"] {
+            color: #61706c !important;
+        }
+        .stApp [data-testid="stMetricValue"] {
+            color: #1e2927 !important;
+        }
+        .block-container {
+            max-width: 860px;
+            padding-top: 4rem;
+            padding-bottom: 4rem;
+        }
+        .eyebrow {
+            color: #b4553d;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        .hero-title {
+            color: #1e2927;
+            font-size: 4.2rem;
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 0.98;
+            margin: 0.35rem 0 0.9rem;
+        }
+        .hero-copy {
+            color: #61706c;
+            font-size: 1.05rem;
+            margin-bottom: 2.2rem;
+        }
+        .result-label {
+            color: #61706c;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .model-name {
+            color: #1e2927;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0.2rem 0 0.25rem;
+        }
+        div[data-testid="stMetric"] {
+            background: #fffdf9;
+            border: 1px solid #e5dfd5;
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+        }
+        @media (max-width: 640px) {
+            .hero-title {
+                font-size: 2.7rem;
+            }
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-if uploaded_file is not None:
-    # -------------------------------------------------------------------
-    # 3️⃣  Persist the uploaded file to the backend.
-    # -------------------------------------------------------------------
-    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.success(f"File saved to `{file_path}`")
+st.markdown('<div class="eyebrow">Auto ML</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-title">Your model,<br>clearly measured.</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="hero-copy">Upload data, choose a target, and review the latest saved model result.</div>',
+    unsafe_allow_html=True,
+)
 
-    # -------------------------------------------------------------------
-    # 4️⃣  Load the data into a pandas DataFrame.
-    # -------------------------------------------------------------------
-    try:
-        if file_path.lower().endswith('.csv'):
-            df = pd.read_csv(file_path)
+
+@st.cache_data
+def load_results(file_path: str, modified_time: float) -> dict:
+    with open(file_path, encoding="utf-8") as results_file:
+        return json.load(results_file)
+
+
+with st.container(border=True):
+    uploaded_file = st.file_uploader(
+        "Upload a dataset",
+        type=["csv", "xlsx"],
+        help="Supported formats: CSV and Excel (.xlsx)",
+    )
+
+    if uploaded_file is not None:
+        file_path = UPLOAD_DIR / uploaded_file.name
+        file_path.write_bytes(uploaded_file.getbuffer())
+
+        try:
+            if file_path.suffix.lower() == ".csv":
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+        except Exception as error:
+            st.error(f"Could not read this file: {error}")
+            st.stop()
+
+        target_col = st.selectbox("Choose the target column", options=df.columns)
+        with STATE_FILE.open("w", encoding="utf-8") as state_file:
+            json.dump(
+                {
+                    "uploaded_file_name": uploaded_file.name,
+                    "target_col": target_col,
+                },
+                state_file,
+                indent=2,
+            )
+            # Train the model using the uploaded data and selected target.
+            train_and_save_model(data_path=file_path, target_col=target_col)
+
+
+if RESULTS_FILE.exists():
+    results = load_results(str(RESULTS_FILE), RESULTS_FILE.stat().st_mtime)
+    metrics = results.get("metrics", {})
+    problem_type = results.get("problem_type", "").title()
+
+    st.space("large")
+    with st.container(border=True):
+        st.markdown('<div class="result-label">Latest saved result</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="model-name">{results.get("model_name", "Unknown model")}</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"{problem_type} · target: {results.get('target_column', 'Unknown')}"
+        )
+
+        if results.get("problem_type") == "classification":
+            st.metric("Accuracy", f"{metrics.get('accuracy', 0):.2%}", border=True)
         else:
-            # pandas uses openpyxl for .xlsx files – it is a lightweight
-            # dependency that is usually present in a standard Python env.
-            df = pd.read_excel(file_path)
-    except Exception as e:
-        st.error(f"❌ Failed to read the uploaded file: {e}")
-        st.stop()
-
-    st.subheader("Dataset preview (first 5 rows)")
-    st.dataframe(df.head())
-
-    # -------------------------------------------------------------------
-    # 5️⃣  Let the user pick the target/label column.
-    # -------------------------------------------------------------------
-    target_col = st.selectbox("🎯 Choose the target column", options=df.columns)
-    y = df[target_col]
-
+            metric_columns = st.columns(3)
+            with metric_columns[0]:
+                st.metric("R²", f"{metrics.get('r2', 0):.4f}", border=True)
+            with metric_columns[1]:
+                st.metric("MAE", f"{metrics.get('mae', 0):.2f}", border=True)
+            with metric_columns[2]:
+                st.metric("RMSE", f"{metrics.get('rmse', 0):.2f}", border=True)
 else:
-    st.info("📁 Awaiting a data file upload…")
+    st.caption("Run the notebook to create the first saved model result.")

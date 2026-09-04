@@ -1,1 +1,5 @@
 .venv
+selected_data.json
+best_model_results.json
+model_parameters
+uploads

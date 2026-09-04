@@ -42,6 +42,27 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC, SVR
+# Additional model imports
+from sklearn.naive_bayes import GaussianNB
+
+# Optional third‑party models – import lazily to avoid hard failures if the package is missing.
+try:
+    from xgboost import XGBClassifier, XGBRegressor
+except Exception:  # pragma: no cover
+    XGBClassifier = XGBRegressor = None
+
+try:
+    from lightgbm import LGBMClassifier, LGBMRegressor
+except Exception:  # pragma: no cover
+    LGBMClassifier = LGBMRegressor = None
+
+try:
+    from catboost import CatBoostClassifier, CatBoostRegressor
+except Exception:  # pragma: no cover
+    CatBoostClassifier = CatBoostRegressor = None
+
+# Hyperparameter‑tuning helpers
+from hyperparameter_tuning import tune_models, save_best_params, load_best_params
 
 
 def _load_data(data_path: Path) -> pd.DataFrame:
@@ -107,24 +128,65 @@ def _determine_problem_type(y: pd.Series) -> str:
     return "regression"
 
 
-def _build_models(problem_type: str) -> Dict[str, Any]:
-    """Instantiate the candidate models used in the original notebook.
+def _instantiate_models(problem_type: str, best_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Instantiate candidate models, applying hyper‑parameters from *best_params*.
 
-    Returns a mapping from a human readable name to an unfitted estimator.
+    The function returns a mapping from a human‑readable model name to an unfitted
+    estimator instance. Models that depend on optional third‑party libraries are
+    included only if the import succeeded (the corresponding class is not ``None``).
     """
     if problem_type == "regression":
-        return {
-            "Linear Regression": LinearRegression(),
-            "Random Forest": RandomForestRegressor(n_estimators=200, random_state=42),
-            "Gradient Boosting": GradientBoostingRegressor(random_state=42),
-            "SVR": SVR(),
+        constructors = {
+            "Linear Regression": LinearRegression,
+            "Random Forest": RandomForestRegressor,
+            "Gradient Boosting": GradientBoostingRegressor,
+            "XGBoost": XGBRegressor,
+            "LightGBM": LGBMRegressor,
+            "CatBoost": CatBoostRegressor,
         }
-    # classification
+    else:
+        constructors = {
+            "Logistic Regression": LogisticRegression,
+            "Random Forest": RandomForestClassifier,
+            "Gradient Boosting": GradientBoostingClassifier,
+            "SVM": SVC,
+            "XGBoost": XGBClassifier,
+            "LightGBM": LGBMClassifier,
+            "CatBoost": CatBoostClassifier,
+            "Naive Bayes": GaussianNB,
+        }
+    models = {}
+    for name, ctor in constructors.items():
+        if ctor is None:
+            # Skip models whose optional dependency is not installed.
+            continue
+        params = best_params.get(name, {})
+        models[name] = ctor(**params)
+    return models
+
+def metrics(name, y_true, y_pred):
+    """Calculate regression/classification metrics for a model.
+
+    Returns a dict with model name and rounded metric values.
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_pred = np.asarray(y_pred, dtype=float).ravel()
+
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    # Avoid division by zero for MAPE – replace zeros with a small epsilon.
+    y_true_safe = np.where(y_true == 0, np.finfo(float).eps, y_true)
+    mape = np.mean(np.abs((y_true - y_pred) / y_true_safe)) * 100
+    r2 = r2_score(y_true, y_pred)
+    # Convert MAPE to a pseudo‑accuracy score (higher is better).
+    acc = max(0.0, 1.0 - mape / 100.0) * 100
     return {
-        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=200, random_state=42),
-        "Gradient Boosting": GradientBoostingClassifier(random_state=42),
-        "SVM": SVC(random_state=42),
+        "model": name,
+        "Accuracy": round(acc, 3),
+        "MAE": round(mae, 1),
+        "RMSE": round(rmse, 1),
+        "MAPE": round(mape, 3),
+        "R2": round(r2, 4),
     }
 
 
@@ -132,28 +194,17 @@ def _evaluate_models(
     problem_type: str,
     result_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Create a ``DataFrame`` with the performance of each model.
+    """Create a DataFrame with the performance of each model using the custom metrics.
 
-    For regression we compute *r2*, *mae* and *rmse*.
-    For classification we compute *accuracy*.
-    The returned ``DataFrame`` is sorted descending by the primary metric
-    (``r2`` or ``accuracy``).
+    Returns a DataFrame sorted by the primary metric (Accuracy for classification,
+    R2 for regression).
     """
+    y_true = result_df["actual"]
     model_names = [col for col in result_df.columns if col != "actual"]
-    if problem_type == "classification":
-        metrics = [accuracy_score(result_df["actual"], result_df[name]) for name in model_names]
-        metrics_df = pd.DataFrame({"model": model_names, "accuracy": metrics})
-        return metrics_df.sort_values("accuracy", ascending=False)
-    # regression path
-    rows = []
-    for name in model_names:
-        pred = result_df[name]
-        r2 = r2_score(result_df["actual"], pred)
-        mae = mean_absolute_error(result_df["actual"], pred)
-        rmse = np.sqrt(mean_squared_error(result_df["actual"], pred))
-        rows.append({"model": name, "r2": r2, "mae": mae, "rmse": rmse})
-    metrics_df = pd.DataFrame(rows)
-    return metrics_df.sort_values("r2", ascending=False)
+    records = [metrics(name, y_true, result_df[name]) for name in model_names]
+    metrics_df = pd.DataFrame(records)
+    sort_col = "Accuracy" if problem_type == "classification" else "R2"
+    return metrics_df.sort_values(sort_col, ascending=False)
 
 
 def train_and_save_model(
@@ -230,9 +281,24 @@ def train_and_save_model(
     )
 
     # ---------------------------------------------------------------------
-    # 7. Instantiate candidate models
+    # 7. Hyperparameter tuning and model instantiation
     # ---------------------------------------------------------------------
-    models = _build_models(problem_type)
+    params_path = Path("best_model_params.json")
+    if params_path.is_file():
+        best_params = load_best_params(params_path)
+    else:
+        # Use the same train/validation split for tuning
+        best_params = tune_models(
+            problem_type,
+            x_train,
+            x_test,
+            y_train,
+            y_test,
+            n_trials=30,
+        )
+        save_best_params(best_params, params_path)
+
+    models = _instantiate_models(problem_type, best_params)
 
     # ---------------------------------------------------------------------
     # 8. Fit each model and collect predictions

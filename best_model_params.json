@@ -1,0 +1,43 @@
+{
+    "Logistic Regression": {
+        "C": 9.261096092118537
+    },
+    "Random Forest": {
+        "n_estimators": 102,
+        "max_depth": 9,
+        "min_samples_split": 8,
+        "min_samples_leaf": 1
+    },
+    "Gradient Boosting": {
+        "n_estimators": 179,
+        "learning_rate": 0.0728014532254162,
+        "max_depth": 8
+    },
+    "SVM": {
+        "C": 1.824935087167941
+    },
+    "XGBoost": {
+        "n_estimators": 91,
+        "max_depth": 8,
+        "learning_rate": 0.07802100471707706,
+        "subsample": 0.7781116507205115,
+        "colsample_bytree": 0.6884791365178037
+    },
+    "LightGBM": {
+        "n_estimators": 122,
+        "learning_rate": 0.13738169480709883,
+        "num_leaves": 104,
+        "min_data_in_leaf": 22,
+        "feature_fraction": 0.9086925751544057,
+        "bagging_fraction": 0.755507880537539,
+        "bagging_freq": 5
+    },
+    "CatBoost": {
+        "iterations": 77,
+        "depth": 10,
+        "learning_rate": 0.0014126515062141912,
+        "l2_leaf_reg": 3.4808098250281514,
+        "bagging_temperature": 0.0034393487710764337
+    },
+    "Naive Bayes": {}
+}

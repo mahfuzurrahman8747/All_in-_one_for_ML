@@ -11,108 +11,48 @@ STATE_FILE = Path("selected_data.json")
 RESULTS_FILE = Path("best_model_results.json")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-st.set_page_config(
-    page_title="Model results",
-    page_icon=":material/insights:",
-    layout="centered",
-)
+def setup_page() -> None:
+    """Configure the page and keep the visual styling in one place."""
+    st.set_page_config(page_title="Model results", page_icon=":material/insights:", layout="centered")
+    st.markdown(
+        """
+        <style>
+            .stApp { background: #f5f3ef; color: #1e2927; }
+            .stApp p, .stApp label, .stApp [data-testid="stMarkdownContainer"],
+            .stApp [data-testid="stFileUploaderDropzoneInstructions"],
+            .stApp [data-testid="stFileUploaderDropzoneInstructions"] span,
+            .stApp [data-testid="stMetricValue"] { color: #1e2927 !important; }
+            .stApp [data-testid="stFileUploaderDropzone"] { background: #fffdf9; border: 1px dashed #c9c0b4; }
+            .stApp [data-testid="stFileUploaderDropzone"] small,
+            .stApp [data-testid="stMetricLabel"] { color: #61706c !important; }
+            .block-container { max-width: 860px; padding-top: 4rem; padding-bottom: 4rem; }
+            .eyebrow, .result-label { color: #b4553d; font-size: .75rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+            .hero-title { color: #1e2927; font-size: 4.2rem; font-weight: 700; letter-spacing: -.04em; line-height: .98; margin: .35rem 0 .9rem; }
+            .hero-copy { color: #61706c; font-size: 1.05rem; margin-bottom: 2.2rem; }
+            .model-name { color: #1e2927; font-size: 1.8rem; font-weight: 700; margin: .2rem 0 .25rem; }
+            div[data-testid="stMetric"] { background: #fffdf9; border: 1px solid #e5dfd5; border-radius: 12px; padding: 1rem 1.1rem; }
+            @media (max-width: 640px) { .hero-title { font-size: 2.7rem; } }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown(
-    """
-    <style>
-        .stApp {
-            background: #f5f3ef;
-            color: #1e2927;
-        }
-        .stApp p,
-        .stApp label,
-        .stApp [data-testid="stMarkdownContainer"],
-        .stApp [data-testid="stFileUploaderDropzoneInstructions"],
-        .stApp [data-testid="stFileUploaderDropzoneInstructions"] span {
-            color: #1e2927 !important;
-        }
-        .stApp [data-testid="stFileUploaderDropzone"] {
-            background: #fffdf9;
-            border: 1px dashed #c9c0b4;
-        }
-        .stApp [data-testid="stFileUploaderDropzone"] small {
-            color: #61706c !important;
-        }
-        .stApp [data-testid="stMetricLabel"] {
-            color: #61706c !important;
-        }
-        .stApp [data-testid="stMetricValue"] {
-            color: #1e2927 !important;
-        }
-        .block-container {
-            max-width: 860px;
-            padding-top: 4rem;
-            padding-bottom: 4rem;
-        }
-        .eyebrow {
-            color: #b4553d;
-            font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
-        }
-        .hero-title {
-            color: #1e2927;
-            font-size: 4.2rem;
-            font-weight: 700;
-            letter-spacing: -0.04em;
-            line-height: 0.98;
-            margin: 0.35rem 0 0.9rem;
-        }
-        .hero-copy {
-            color: #61706c;
-            font-size: 1.05rem;
-            margin-bottom: 2.2rem;
-        }
-        .result-label {
-            color: #61706c;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-        }
-        .model-name {
-            color: #1e2927;
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin: 0.2rem 0 0.25rem;
-        }
-        div[data-testid="stMetric"] {
-            background: #fffdf9;
-            border: 1px solid #e5dfd5;
-            border-radius: 12px;
-            padding: 1rem 1.1rem;
-        }
-        @media (max-width: 640px) {
-            .hero-title {
-                font-size: 2.7rem;
-            }
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
-st.markdown('<div class="eyebrow">Auto ML</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-title">Your model,<br>clearly measured.</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="hero-copy">Upload data, choose a target, and review the latest saved model result.</div>',
-    unsafe_allow_html=True,
-)
+def show_header() -> None:
+    st.markdown('<div class="eyebrow">Auto ML</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Your model,<br>clearly measured.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="hero-copy">Upload data, choose a target, and review the latest saved model result.</div>',
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data
 def load_results(file_path: str, modified_time: float) -> dict:
-    with open(file_path, encoding="utf-8") as results_file:
-        return json.load(results_file)
+    return json.loads(Path(file_path).read_text(encoding="utf-8"))
 
 
-with st.container(border=True):
+def upload_and_train() -> None:
     uploaded_file = st.file_uploader(
         "Upload a dataset",
         type=["csv", "xlsx"],
@@ -124,29 +64,24 @@ with st.container(border=True):
         file_path.write_bytes(uploaded_file.getbuffer())
 
         try:
-            if file_path.suffix.lower() == ".csv":
-                df = pd.read_csv(file_path)
-            else:
-                df = pd.read_excel(file_path)
+            df = pd.read_csv(file_path) if file_path.suffix.lower() == ".csv" else pd.read_excel(file_path)
         except Exception as error:
             st.error(f"Could not read this file: {error}")
-            st.stop()
+            return
 
         target_col = st.selectbox("Choose the target column", options=df.columns)
-        with STATE_FILE.open("w", encoding="utf-8") as state_file:
-            json.dump(
-                {
-                    "uploaded_file_name": uploaded_file.name,
-                    "target_col": target_col,
-                },
-                state_file,
-                indent=2,
-            )
-            # Train the model using the uploaded data and selected target.
-            train_and_save_model(data_path=file_path, target_col=target_col)
+        STATE_FILE.write_text(
+            json.dumps({"uploaded_file_name": uploaded_file.name, "target_col": target_col}, indent=2),
+            encoding="utf-8",
+        )
+        train_and_save_model(data_path=file_path, target_col=target_col)
 
 
-if RESULTS_FILE.exists():
+def show_results() -> None:
+    if not RESULTS_FILE.exists():
+        st.caption("Run the notebook to create the first saved model result.")
+        return
+
     results = load_results(str(RESULTS_FILE), RESULTS_FILE.stat().st_mtime)
     metrics = results.get("metrics", {})
     problem_type = results.get("problem_type", "").title()
@@ -163,14 +98,19 @@ if RESULTS_FILE.exists():
         )
 
         if results.get("problem_type") == "classification":
-            st.metric("Accuracy", f"{metrics.get('accuracy', 0):.2%}", border=True)
+            st.metric("Accuracy", f"{metrics.get('Accuracy', 0) / 100:.2%}", border=True)
         else:
             metric_columns = st.columns(3)
             with metric_columns[0]:
-                st.metric("R²", f"{metrics.get('r2', 0):.4f}", border=True)
+                st.metric("R²", f"{metrics.get('R2', 0):.4f}", border=True)
             with metric_columns[1]:
-                st.metric("MAE", f"{metrics.get('mae', 0):.2f}", border=True)
+                st.metric("MAE", f"{metrics.get('MAE', 0):.2f}", border=True)
             with metric_columns[2]:
-                st.metric("RMSE", f"{metrics.get('rmse', 0):.2f}", border=True)
-else:
-    st.caption("Run the notebook to create the first saved model result.")
+                st.metric("RMSE", f"{metrics.get('RMSE', 0):.2f}", border=True)
+
+
+setup_page()
+show_header()
+with st.container(border=True):
+    upload_and_train()
+show_results()

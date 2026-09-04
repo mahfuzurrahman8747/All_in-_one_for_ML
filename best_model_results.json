@@ -1,11 +1,13 @@
 {
-    "model_name": "Gradient Boosting",
-    "problem_type": "regression",
-    "target_column": "Trip_Price",
+    "model_name": "Logistic Regression",
+    "problem_type": "classification",
+    "target_column": "is_canceled",
     "metrics": {
-        "model": "Gradient Boosting",
-        "r2": 0.9725485254267465,
-        "mae": 3.0640745605380553,
-        "rmse": 5.139939675738017
+        "model": "Logistic Regression",
+        "Accuracy": 100.0,
+        "MAE": 0.0,
+        "RMSE": 0.0,
+        "MAPE": 0.0,
+        "R2": 1.0
     }
 }

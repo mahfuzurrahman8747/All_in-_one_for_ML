@@ -82,7 +82,7 @@ def _load_data(data_path: Path) -> pd.DataFrame:
     return pd.read_parquet(data_path)
 
 
-def _clean_data(df: pd.DataFrame) -> pd.DataFrame:
+def _clean_data(df: pd.DataFrame, target_col: str | None = None) -> pd.DataFrame:
     """Perform the same cleaning steps that the notebook applied.
 
     * Drop rows with missing values.
@@ -106,11 +106,19 @@ def _clean_data(df: pd.DataFrame) -> pd.DataFrame:
         r"(^|[_\s-])(id|name|email|phone|phone_num|phone_number)([_\s-]|$)",
         re.IGNORECASE,
     )
-    columns_to_remove = [col for col in df.columns if identifier_pattern.search(str(col))]
+    columns_to_remove = [
+        col
+        for col in df.columns
+        if col != target_col and identifier_pattern.search(str(col))
+    ]
     df = df.drop(columns=columns_to_remove, errors="ignore")
 
     # One‑hot encode any remaining object or categorical columns.
-    categorical_columns = df.select_dtypes(include=["object", "category"]).columns
+    categorical_columns = [
+        col
+        for col in df.select_dtypes(include=["object", "str", "category"]).columns
+        if col != target_col
+    ]
     if len(categorical_columns) > 0:
         df = pd.get_dummies(df, columns=categorical_columns, dtype=int)
 
@@ -156,30 +164,36 @@ def _instantiate_models(problem_type: str, best_params: Dict[str, Any]) -> Dict[
             "Naive Bayes": GaussianNB,
         }
     models = {}
+    best_params = best_params or {}
     for name, ctor in constructors.items():
         if ctor is None:
             # Skip models whose optional dependency is not installed.
             continue
-        params = best_params.get(name, {})
+        params = best_params.get(name) or {}
         models[name] = ctor(**params)
     return models
 
-def metrics(name, y_true, y_pred):
+def metrics(name, y_true, y_pred, problem_type="regression"):
     """Calculate regression/classification metrics for a model.
 
     Returns a dict with model name and rounded metric values.
     """
-    y_true = np.asarray(y_true, dtype=float).ravel()
-    y_pred = np.asarray(y_pred, dtype=float).ravel()
+    y_true = np.asarray(y_true).ravel()
+    y_pred = np.asarray(y_pred).ravel()
 
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     # Avoid division by zero for MAPE – replace zeros with a small epsilon.
-    y_true_safe = np.where(y_true == 0, np.finfo(float).eps, y_true)
-    mape = np.mean(np.abs((y_true - y_pred) / y_true_safe)) * 100
-    r2 = r2_score(y_true, y_pred)
-    # Convert MAPE to a pseudo‑accuracy score (higher is better).
-    acc = max(0.0, 1.0 - mape / 100.0) * 100
+    y_true_numeric = y_true.astype(float)
+    y_pred_numeric = y_pred.astype(float)
+    y_true_safe = np.where(y_true_numeric == 0, np.finfo(float).eps, y_true_numeric)
+    mape = np.mean(np.abs((y_true_numeric - y_pred_numeric) / y_true_safe)) * 100
+    r2 = r2_score(y_true_numeric, y_pred_numeric)
+    if problem_type == "classification":
+        acc = accuracy_score(y_true, y_pred) * 100
+    else:
+        # Accuracy is not defined for continuous regression targets.
+        acc = max(0.0, 1.0 - mape / 100.0) * 100
     return {
         "model": name,
         "Accuracy": round(acc, 3),
@@ -201,7 +215,10 @@ def _evaluate_models(
     """
     y_true = result_df["actual"]
     model_names = [col for col in result_df.columns if col != "actual"]
-    records = [metrics(name, y_true, result_df[name]) for name in model_names]
+    records = [
+        metrics(name, y_true, result_df[name], problem_type)
+        for name in model_names
+    ]
     metrics_df = pd.DataFrame(records)
     sort_col = "Accuracy" if problem_type == "classification" else "R2"
     return metrics_df.sort_values(sort_col, ascending=False)
@@ -237,20 +254,68 @@ def train_and_save_model(
     df = _load_data(data_path)
 
     # ---------------------------------------------------------------------
-    # 2. Basic cleaning / feature engineering (mirrors the notebook)
+    if target_col not in df.columns:
+        raise ValueError(
+            f"Target column {target_col!r} not found in the uploaded data. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    target_classes = None
+
+    # 2. Basic cleaning / feature engineering (mirrors the notebook).
+    # Keep the selected target intact so categorical targets are not one-hot encoded.
     # ---------------------------------------------------------------------
-    df = _clean_data(df)
+    df = _clean_data(df, target_col=target_col)
 
     # ---------------------------------------------------------------------
     # 3. Separate target and features
     # ---------------------------------------------------------------------
     if target_col not in df.columns:
         raise ValueError(
-            f"Target column {target_col!r} not found. Available columns: {list(df.columns)}"
-        )
-    y = df[target_col]
+        f"Target column {target_col!r} not found. "
+        f"Available columns: {list(df.columns)}"
+    )
+
+# --------------------------------------------------
+# Encode target column
+# --------------------------------------------------
+    if target_col not in df.columns:
+        raise ValueError(
+        f"Target column {target_col!r} not found. "
+        f"Available columns: {list(df.columns)}"
+    )
+
+# --------------------------------------------------
+# Encode target column
+# --------------------------------------------------
+    target_dtype = df[target_col].dtype
+
+    if (
+        pd.api.types.is_object_dtype(target_dtype)
+        or pd.api.types.is_string_dtype(target_dtype)
+        or pd.api.types.is_categorical_dtype(target_dtype)
+    ):
+        # Get unique classes, ignoring missing values
+        target_classes = df[target_col].dropna().unique().tolist()
+
+        # Create mapping: class name -> integer
+        target_mapping = {
+            value: index for index, value in enumerate(target_classes)
+        }
+
+        # IMPORTANT: assign encoded values back to dataframe
+        df[target_col] = df[target_col].map(target_mapping)
+
+    # Convert target to numeric explicitly.
+    df[target_col] = pd.to_numeric(df[target_col], errors="raise")
+
+    print(f"Target column '{target_col}' encoded. Classes: {target_classes}")
+    print(f"First 5 rows of the DataFrame after encoding:\n{df[target_col].head(5)}")
+    # Create X and y AFTER encoding
+    y = df[target_col].astype(int) if target_classes is not None else df[target_col]
     X = df.drop(columns=[target_col])
 
+    print(f"Features shape: {X.shape}, Target shape: {y.shape}")
     # ---------------------------------------------------------------------
     # 4. Determine problem type (regression vs classification)
     # ---------------------------------------------------------------------
@@ -326,6 +391,7 @@ def train_and_save_model(
         "feature_columns": list(x_train.columns),
         "target_column": target_col,
         "problem_type": problem_type,
+        "target_classes": target_classes,
     }
     model_path = output_dir / "best_model.joblib"
     joblib.dump(model_bundle, model_path)
@@ -348,3 +414,7 @@ def train_and_save_model(
 
 # The module deliberately does *not* execute any code on import – callers must
 # invoke :func:`train_and_save_model` explicitly.
+if __name__ == "__main__":
+    file_path = Path("uploads/Test.csv")
+    target_col = "Spending_Score"
+    train_and_save_model(data_path=file_path, target_col=target_col)

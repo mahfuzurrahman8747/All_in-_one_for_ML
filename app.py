@@ -9,6 +9,7 @@ from model_train import train_and_save_model
 UPLOAD_DIR = Path("uploads")
 STATE_FILE = Path("selected_data.json")
 RESULTS_FILE = Path("best_model_results.json")
+MODEL_FILE = Path("model_parameters/best_model.joblib")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 def setup_page() -> None:
@@ -69,12 +70,32 @@ def upload_and_train() -> None:
             st.error(f"Could not read this file: {error}")
             return
 
-        target_col = st.selectbox("Choose the target column", options=df.columns)
+        target_col = st.selectbox(
+            "Choose the target column",
+            options=df.columns,
+            index=None,
+            placeholder="Select a target column",
+        )
+
+        if target_col is None:
+            st.info("Select a target column to continue.")
+            return
+
         STATE_FILE.write_text(
             json.dumps({"uploaded_file_name": uploaded_file.name, "target_col": target_col}, indent=2),
             encoding="utf-8",
         )
-        train_and_save_model(data_path=file_path, target_col=target_col)
+
+        if st.button("Train model", type="primary"):
+            try:
+                with st.spinner("Training model..."):
+                    train_and_save_model(data_path=file_path, target_col=target_col)
+                st.success("Model trained successfully.")
+                st.rerun()
+            except ValueError as error:
+                st.error(f"Training could not start: {error}")
+            except Exception as error:
+                st.error(f"Training failed: {error}")
 
 
 def show_results() -> None:
@@ -98,15 +119,60 @@ def show_results() -> None:
         )
 
         if results.get("problem_type") == "classification":
-            st.metric("Accuracy", f"{metrics.get('Accuracy', 0) / 100:.2%}", border=True)
+            st.metric("Accuracy", f"{metrics.get('Accuracy', 0):.2f}", border=True)
         else:
-            metric_columns = st.columns(3)
+            metric_columns = st.columns(4)
             with metric_columns[0]:
-                st.metric("R²", f"{metrics.get('R2', 0):.4f}", border=True)
+                st.metric("Accuracy", f"{metrics.get('Accuracy', 0):.2f}", border=True)
             with metric_columns[1]:
                 st.metric("MAE", f"{metrics.get('MAE', 0):.2f}", border=True)
             with metric_columns[2]:
                 st.metric("RMSE", f"{metrics.get('RMSE', 0):.2f}", border=True)
+            with metric_columns[3]:
+                st.metric("R²", f"{metrics.get('R2', 0):.4f}", border=True)
+
+        if MODEL_FILE.is_file():
+            st.download_button(
+                "Download best model",
+                data=MODEL_FILE.read_bytes(),
+                file_name="best_model.joblib",
+                mime="application/octet-stream",
+                type="primary",
+                width="stretch",
+            )
+
+    with st.expander("How to use the downloaded model"):
+        st.markdown(
+            """
+            Download `best_model.joblib` after training. The file contains the trained model,
+            scaler, transformed feature-column names, target column, and problem type.
+
+            Install the required packages, then load the bundle like this:
+
+            ```python
+            import joblib
+
+            bundle = joblib.load("best_model.joblib")
+            model = bundle["model"]
+            scaler = bundle["scaler"]
+            feature_columns = bundle["feature_columns"]
+            target_classes = bundle.get("target_classes")
+
+            # Prepare new_data with the same cleaning and one-hot encoding used during training.
+            new_data = new_data.reindex(columns=feature_columns, fill_value=0)
+            scaled_data = scaler.transform(new_data)
+            predictions = model.predict(scaled_data)
+
+            if target_classes is not None:
+                predictions = [target_classes[int(value)] for value in predictions]
+            print(predictions)
+            ```
+
+            New data must use the same input columns and preprocessing as the training data.
+            Keep the downloaded file with the same scikit-learn and model-library versions
+            used for training.
+            """
+        )
 
 
 setup_page()

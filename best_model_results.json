@@ -1,13 +1,13 @@
 {
-    "model_name": "Logistic Regression",
-    "problem_type": "classification",
-    "target_column": "is_canceled",
+    "model_name": "Gradient Boosting",
+    "problem_type": "regression",
+    "target_column": "actual_productivity",
     "metrics": {
-        "model": "Logistic Regression",
-        "Accuracy": 100.0,
+        "model": "Gradient Boosting",
+        "Accuracy": 92.218,
         "MAE": 0.0,
-        "RMSE": 0.0,
-        "MAPE": 0.0,
-        "R2": 1.0
+        "RMSE": 0.1,
+        "MAPE": 7.782,
+        "R2": 0.7741
     }
 }

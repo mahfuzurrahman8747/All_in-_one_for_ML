@@ -14,11 +14,15 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 def setup_page() -> None:
     """Configure the page and keep the visual styling in one place."""
-    st.set_page_config(page_title="Model results", page_icon=":material/insights:", layout="centered")
+    st.set_page_config(
+        page_title="All-in-One for Machine Learning",
+        page_icon=":material/insights:",
+        layout="centered",
+    )
     st.markdown(
         """
         <style>
-            .stApp { background: #f5f3ef; color: #1e2927; }
+            .stApp { background: #f5f3ef; color: #1e2927; height: 100dvh; overflow: hidden; }
             .stApp p, .stApp label, .stApp [data-testid="stMarkdownContainer"],
             .stApp [data-testid="stFileUploaderDropzoneInstructions"],
             .stApp [data-testid="stFileUploaderDropzoneInstructions"] span,
@@ -26,13 +30,32 @@ def setup_page() -> None:
             .stApp [data-testid="stFileUploaderDropzone"] { background: #fffdf9; border: 1px dashed #c9c0b4; }
             .stApp [data-testid="stFileUploaderDropzone"] small,
             .stApp [data-testid="stMetricLabel"] { color: #61706c !important; }
-            .block-container { max-width: 860px; padding-top: 4rem; padding-bottom: 4rem; }
+            .block-container { max-width: 860px; min-height: 100dvh; box-sizing: border-box; padding: 3rem 1rem 1.2rem; text-align: center; }
+            [data-testid="stVerticalBlock"] { gap: .55rem; }
+            .block-container [data-testid="stMarkdownContainer"],
+            .block-container [data-testid="stCaptionContainer"],
+            .block-container label { text-align: center !important; }
             .eyebrow, .result-label { color: #b4553d; font-size: .75rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-            .hero-title { color: #1e2927; font-size: 4.2rem; font-weight: 700; letter-spacing: -.04em; line-height: .98; margin: .35rem 0 .9rem; }
-            .hero-copy { color: #61706c; font-size: 1.05rem; margin-bottom: 2.2rem; }
-            .model-name { color: #1e2927; font-size: 1.8rem; font-weight: 700; margin: .2rem 0 .25rem; }
-            div[data-testid="stMetric"] { background: #fffdf9; border: 1px solid #e5dfd5; border-radius: 12px; padding: 1rem 1.1rem; }
-            @media (max-width: 640px) { .hero-title { font-size: 2.7rem; } }
+            .hero-title { color: #1e2927; font-size: 2.45rem; font-weight: 700; letter-spacing: 0; line-height: 1.05; margin: .2rem auto .55rem; max-width: 720px; }
+            .hero-copy { color: #61706c; font-size: .95rem; margin-bottom: .8rem; }
+            .model-name { color: #1e2927; font-size: 1.45rem; font-weight: 700; margin: .15rem 0 .15rem; }
+            [data-testid="stFileUploader"], [data-testid="stSelectbox"], [data-testid="stButton"], [data-testid="stDownloadButton"] { width: min(100%, 700px); margin-left: auto; margin-right: auto; }
+            [data-testid="stFileUploaderDropzone"] { text-align: center; }
+            [data-testid="stAlert"] { text-align: center; }
+            div[data-testid="stMetric"] { background: #fffdf9; border: 1px solid #e5dfd5; border-radius: 10px; padding: .55rem .75rem; }
+            div[data-testid="stMetricLabel"] { font-size: .78rem; }
+            div[data-testid="stMetricValue"] { font-size: 1.45rem; }
+            @media (max-width: 640px) {
+                .block-container { padding: 2.2rem .75rem .8rem; }
+                .hero-title { font-size: 2rem; max-width: 520px; }
+                .hero-copy { font-size: .88rem; margin-bottom: .55rem; }
+            }
+            @media (max-height: 760px) {
+                .block-container { padding-top: 2.1rem; padding-bottom: .55rem; }
+                .hero-title { font-size: 2.1rem; }
+                .hero-copy { margin-bottom: .45rem; }
+                div[data-testid="stMetric"] { padding: .4rem .65rem; }
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -41,7 +64,7 @@ def setup_page() -> None:
 
 def show_header() -> None:
     st.markdown('<div class="eyebrow">Auto ML</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-title">Your model,<br>clearly measured.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">All-in-One for Machine Learning<br>(AutoML Toolkit)</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="hero-copy">Upload data, choose a target, and review the latest saved model result.</div>',
         unsafe_allow_html=True,
@@ -107,7 +130,7 @@ def show_results() -> None:
     metrics = results.get("metrics", {})
     problem_type = results.get("problem_type", "").title()
 
-    st.space("large")
+    st.space("small")
     with st.container(border=True):
         st.markdown('<div class="result-label">Latest saved result</div>', unsafe_allow_html=True)
         st.markdown(

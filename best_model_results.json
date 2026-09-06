@@ -1,13 +1,13 @@
 {
-    "model_name": "Gradient Boosting",
+    "model_name": "Random Forest",
     "problem_type": "regression",
-    "target_column": "actual_productivity",
+    "target_column": "Trip_Price",
     "metrics": {
-        "model": "Gradient Boosting",
-        "Accuracy": 92.218,
-        "MAE": 0.0,
-        "RMSE": 0.1,
-        "MAPE": 7.782,
-        "R2": 0.7741
+        "model": "Random Forest",
+        "Accuracy": 87.923,
+        "MAE": 4.7,
+        "RMSE": 6.3,
+        "MAPE": 12.077,
+        "R2": 0.9591
     }
 }
